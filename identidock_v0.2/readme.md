@@ -64,4 +64,3 @@ $ docker-compose up
 $ docker build -t identidock .
 $ docker run --name dnmonster amouat/dnmonster:1.0
 $ docker run -p 5000:5000 -e "ENV=DEV" --link dnmonster:dnmonster identidock
-```
