@@ -81,3 +81,89 @@ $ docker-compose up
 =====================================================================
 第五步： 实现缓存功能
 通过引入redis模块实现缓存功能。
+
+============================================================
+
+第六步： 添加测试
+
+```python
+import unittest
+import identidock
+
+class TestCase(unittest.TestCase):
+
+    def setUp(self):
+        identidock.app.config["TESTING"] = True
+        self.app = identidock.app.test_client()
+
+    def test_get_mainpage(self):
+        page = self.app.post("/", data=dict(name="Moby Dock"))
+        assert page.status_code == 200
+        assert 'Hello' in str(page.data)
+        assert 'Moby Dock' in str(page.data)
+
+    def test_html_escaping(self):
+        page = self.app.post("/", data=dict(name='"><b>TEST</b><!--'))
+        assert '<b>' not in str(page.data)
+
+if __name__ == '__main__':
+    unittest.main()
+```
+
+简单的测试文件，其中共有三个方法：
+1. setUP 基于Flask Web应用，初始化一个它的测试脚本
+2. test_get_mainpage 该测试方法以"Moby Dock"作为name字段输入并调用URL /。然后，它会检查
+方法是否返回200状态码，以及返回的数据是否包含"Hello"和"Moby Dock"字符串。
+3. test_html_escaping 测试输入中的HTML元素能否被正确转义。
+
+```shell
+#测试命令
+$ docker build -t identidock .
+$ docker run identidock python test.py
+````
+输出结果展示，第一个测试通过，第二个测试失败。因为我们没有将用户的输入正确转义。这个一个严重的安全问题，
+在大型应用中可能导致数据泄漏和跨站脚本攻击(XSS)。例如，测试输入name = "> <b>pwned!</b><!--",必须包含
+引号。攻击者可能向应用程序注入恶意的JavaScript代码，并诱使用户使用它。
+
+修复代码：
+```python
+name = html.escape(request.form['name'], quote=True) #净化输入
+```
+执行测试代码
+
+修改cmd.sh测试脚本，使测试能够自动化执行。
+
+```shell
+#!/bin/bash
+set -e
+if [ "$ENV" = 'DEV' ];then
+  echo "Running Development Server"
+  exec python "identidock.py"
+else if [ "$ENV" = 'UNIT' ]; then
+  echo "Running Unit Tests"
+  exec python "test.py"
+else
+  echo "Running Production Server"
+  exec uwsgi --http 0.0.0.0:9090 --wsgi-file /app/identidock.py \
+  --callable app --stats 0.0.0.0:9191
+fi
+```
+```shell
+# 执行测试脚本
+$ docker build -t identidock .
+$ docker run -e "ENV=UNIT" identidock
+```
+还可以写更多的测试方法进行测试。为了利用单元测试来验证get_identicon方法，需要调用dnmonster和redis
+服务的测试版本，可以通过`替身测试(test double)`。替身测试替代了真正提供服务的程序部分，通常
+只是一个测试`桩(stub)`，返回一个固定答案，或者是一个`模拟对象(mock)`,它只能够以编写它的时候的预期来
+调用。更多替身测试相关信息Python模拟模块(http://docs.python.org/3/library/unittest.mock.html)
+以及专门的HTTP工具，如Pact(http://github.com/realestate-com-au/pact),Mountebnank(http://www.mbtest.org/)
+和Mirage(https://mirage.readthedocs.org)
+
+
+下一步是将测试放到持续集成服务器中自动运行，这样的话，当源代码提交到源码控制服务器的时候，源码测试便会自动被
+执行，而这都是在源码进入准生产和生产环境前完成。
+
+=======================================================================================
+
+第七步：创建Jenkins容器，进行代码的自动化持续提交测试。
